@@ -3,7 +3,8 @@ Setup:  uv sync
 Run:    python philosophy_wiki_game.py [start_article] [--target WORD] [--steps N] [--no-visualize]
         (visualization highlights each followed link; enabled by default)
 Test:   pytest philosophy_wiki_game.py -v
-(Selenium >= 4.6 downloads the matching browser driver automatically.)
+Using Selenium Webdriver Python Edition
+Made to use with Chrome
 """
 import argparse
 import os
@@ -101,3 +102,6 @@ if __name__ == "__main__":
         print(f"\nResult: {status} after {len(path)} steps")
     finally:
         d.quit()
+
+
+# Deutsche_Sprache => LOOP
