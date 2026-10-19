@@ -1,6 +1,7 @@
 """.
 Setup:  uv sync
-Run:    python philosophy_wiki_game.py [start_article] [--target WORD] [--steps N]
+Run:    python philosophy_wiki_game.py [start_article] [--target WORD] [--steps N] [--no-visualize]
+        (visualization highlights each followed link; enabled by default)
 Test:   pytest philosophy_wiki_game.py -v
 (Selenium >= 4.6 downloads the matching browser driver automatically.)
 """
@@ -35,7 +36,7 @@ def current_title(driver):
     return heading.text.strip()
 
 
-def play(driver, start_article, max_steps=MAX_STEPS, target=TARGET):
+def play(driver, start_article, max_steps=MAX_STEPS, target=TARGET, show=True):
     """Returns (path, status). status: TARGET | LOOP | DEAD_END | LIMIT"""
     driver.get(BASE_URL + quote(start_article.replace(" ", "_")))
     path, visited = [], set()
@@ -55,14 +56,19 @@ def play(driver, start_article, max_steps=MAX_STEPS, target=TARGET):
         if link is None:
             return path, "DEAD_END"
 
-        # Highlight the link and wait a short time for the demo.
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center'});"
-            "arguments[0].style.outline='3px solid red';", link)
-        time.sleep(0.5) # REMOVE for more performance
+        if show:
+            visualize(driver, link)
+
         driver.get(link.get_attribute("href"))
 
     return path, "LIMIT"
+
+def visualize(driver, link):
+    # Highlight the link and wait a short time for the demo.
+    driver.execute_script(
+        "arguments[0].scrollIntoView({block:'center'});"
+        "arguments[0].style.outline='3px solid red';", link)
+    time.sleep(0.5)
 
 
 # ---------------- pytest ----------------
@@ -84,11 +90,14 @@ if __name__ == "__main__":
     parser.add_argument("start", nargs="?", default="Banane")
     parser.add_argument("--target", default=TARGET)
     parser.add_argument("--steps", type=int, default=MAX_STEPS)
+    parser.add_argument("--visualize", action=argparse.BooleanOptionalAction, default=True,
+                        help="highlight each followed link (default: on)")
     args = parser.parse_args()
 
     d = create_browser()
     try:
-        path, status = play(d, args.start, max_steps=args.steps, target=args.target)
+        path, status = play(d, args.start, max_steps=args.steps, target=args.target,
+                            show=args.visualize)
         print(f"\nResult: {status} after {len(path)} steps")
     finally:
         d.quit()
