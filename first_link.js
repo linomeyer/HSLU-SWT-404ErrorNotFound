@@ -1,22 +1,24 @@
+// Nur den Artikelinhalt durchsuchen, nicht Navigation oder Seitenleiste.
 const root = document.querySelector('#mw-content-text .mw-parser-output');
 if (!root) return null;
 
-// Body text only; skip infoboxes and hatnotes which appear before the real text.
+// Absätze und Listen durchsuchen; Infoboxen und vorangestellte Hinweise auslassen.
 const blocks = [...root.querySelectorAll('p, ul > li, ol > li')]
   .filter(el => !el.closest('.infobox, .hatnote'));
 
-// check if found link is actually one we are allowed to use
+// Prüfen, ob der Link nach den Spielregeln verwendet werden darf.
 function isValid(a) {
-  if (!a.href || a.hostname !== location.hostname) return false; // skip external links
+  if (!a.href || a.hostname !== location.hostname) return false; // Externe Links ausschliessen.
   if (!a.pathname.startsWith('/wiki/')) return false;
-  if (a.pathname === location.pathname) return false;       // skip anchors on same page
-  if (a.classList.contains('new')) return false;            // skip red links (page missing)
-  if (a.closest('i, em, sup, .IPA, .reference')) return false; // italic, footnotes, phonetics
+  if (a.pathname === location.pathname) return false;       // Keine Verweise auf dieselbe Seite.
+  if (a.classList.contains('new')) return false;            // Rote Links: Artikel fehlt.
+  if (a.closest('i, em, sup, .IPA, .reference')) return false; // Kein Kursivtext, keine Fussnoten/Lautschrift.
   return true;
 }
 
-// crawls the DOM, looking for the <a> Tags and checks if they are valid - return the first match
+// Den DOM-Baum in Leserichtung durchlaufen und den ersten gültigen Link liefern.
 for (const block of blocks) {
+  // Die Tiefe zählt offene Klammern, auch über verschachtelte HTML-Elemente hinweg.
   let depth = 0, match = null;
   (function walk(node) {
     for (const child of node.childNodes) {
@@ -37,4 +39,5 @@ for (const block of blocks) {
   })(block);
   if (match) return match;
 }
+// Keine passende Verknüpfung gefunden: Das Spiel meldet DEAD_END.
 return null;

@@ -1,18 +1,19 @@
-""".
-Setup:  uv sync
-Run:    python philosophy_wiki_game.py [start_article] [--target WORD] [--steps N] [--no-visualize]
-        (visualization highlights each followed link; enabled by default)
-Test:   pytest philosophy_wiki_game.py -v
-Using Selenium Webdriver Python Edition
-Made to use with Chrome
+"""Wikipedia-Spiel: Dem ersten gültigen Link bis zur Philosophie folgen.
+
+Installation: python -m pip install selenium pytest
+Start:        python philosophy_wiki_game.py [Artikel] [--target WORT] [--steps N]
+Tests:        python -m pytest philosophy_wiki_game.py -v
+Mit --no-visualize entfällt die rote Markierung samt kurzer Pause.
+Chrome, Firefox und Edge werden der Reihe nach ausprobiert.
 """
 import argparse
 import os
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import pytest
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -21,16 +22,25 @@ BASE_URL = "https://de.wikipedia.org/wiki/"
 TARGET = "philosophie"
 MAX_STEPS = 50
 
+# Das Skript relativ zu dieser Datei laden, unabhängig vom Arbeitsverzeichnis.
 _JS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "first_link.js")
 with open(_JS_PATH, encoding="utf-8") as _f:
     FIRST_LINK_JS = _f.read()
 
 
 def create_browser():
-    return webdriver.Chrome()
+    """Den ersten Browser starten, dessen WebDriver verfügbar ist."""
+    for browser in (webdriver.Chrome, webdriver.Firefox, webdriver.Edge):
+        try:
+            return browser()
+        except WebDriverException:
+            continue
+
+    raise RuntimeError("Chrome, Firefox und Edge konnten nicht gestartet werden.")
 
 
 def current_title(driver):
+    """Bis zu zehn Sekunden auf die Artikelüberschrift warten und sie lesen."""
     heading = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "firstHeading"))
     )
@@ -38,7 +48,16 @@ def current_title(driver):
 
 
 def play(driver, start_article, max_steps=MAX_STEPS, target=TARGET, show=True):
-    """Returns (path, status). status: TARGET | LOOP | DEAD_END | LIMIT"""
+    """Besuchte Titel und Abbruchgrund zurückgeben.
+
+    TARGET: Ziel erreicht; LOOP: Titel erneut besucht;
+    DEAD_END: kein gültiger Link; LIMIT: maximale Anzahl Artikel erreicht.
+    Auch der Startartikel zählt als Schritt.
+    """
+    if max_steps < 1:
+        raise ValueError("max_steps muss mindestens 1 sein.")
+
+    # Leerzeichen und Sonderzeichen für die Artikeladresse kodieren.
     driver.get(BASE_URL + quote(start_article.replace(" ", "_")))
     path, visited = [], set()
 
@@ -47,12 +66,18 @@ def play(driver, start_article, max_steps=MAX_STEPS, target=TARGET, show=True):
         path.append(title)
         print(f"{step:>2}. {title}")
 
-        if target in title.lower():
+        # Die bisherige Teilwortsuche beibehalten; Gross-/Kleinschreibung ignorieren.
+        if target.casefold() in title.casefold():
             return path, "TARGET"
         if title in visited:
             return path, "LOOP"
         visited.add(title)
 
+        # Nach dem letzten erlaubten Artikel keine weitere Seite mehr laden.
+        if step == max_steps:
+            return path, "LIMIT"
+
+        # JavaScript sucht den ersten Link gemäss den Spielregeln im Artikeltext.
         link = driver.execute_script(FIRST_LINK_JS)
         if link is None:
             return path, "DEAD_END"
@@ -65,34 +90,81 @@ def play(driver, start_article, max_steps=MAX_STEPS, target=TARGET, show=True):
     return path, "LIMIT"
 
 def visualize(driver, link):
-    # Highlight the link and wait a short time for the demo.
+    """Den nächsten Link sichtbar machen, rot markieren und kurz pausieren."""
     driver.execute_script(
         "arguments[0].scrollIntoView({block:'center'});"
         "arguments[0].style.outline='3px solid red';", link)
     time.sleep(0.5)
 
 
-# ---------------- pytest ----------------
+# ---------------- Automatisierte Tests mit pytest ----------------
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def driver():
+    """Einen Browser für die Tests öffnen und auch bei Fehlern wieder schliessen."""
     d = create_browser()
-    yield d
-    d.quit()
+    try:
+        yield d
+    finally:
+        d.quit()
 
 
 @pytest.mark.parametrize("start", ["Banane", "Schweiz", "Heiliges_Römisches_Reich"])
 def test_reaches_philosophy(driver, start):
-    path, status = play(driver, start)
+    """Integrationstest mit echtem Wikipedia: Der Inhalt kann sich verändern."""
+    path, status = play(driver, start, show=False)
     assert status == "TARGET", f"{start}: {status} after {len(path)} steps: {path}"
 
+
+def test_start_at_target(driver):
+    """Direkt auf Wikipedia starten: Das Ziel ist nach einem Artikel erreicht."""
+    path, status = play(driver, "Philosophie", show=False)
+    assert status == "TARGET"
+    assert path == ["Philosophie"]
+
+
+def test_target_ignores_case(driver):
+    """Auch ein grossgeschriebenes Zielargument wird online erkannt."""
+    path, status = play(driver, "Philosophie", target="PHILOSOPHIE", show=False)
+    assert status == "TARGET"
+    assert path == ["Philosophie"]
+
+
+def test_step_limit(driver):
+    """Beim Limit bleibt der Browser auf dem letzten erlaubten Wikipedia-Artikel."""
+    path, status = play(driver, "Banane", max_steps=1, show=False)
+    assert status == "LIMIT"
+    assert path == ["Banane"]
+    assert driver.current_url == BASE_URL + "Banane"
+
+
+def test_detects_loop(driver):
+    """Den bekannten Online-Zyklus ab Deutsche Sprache erkennen.
+
+    Ein absichtlich unerreichbares Ziel verhindert einen vorzeitigen TARGET-Abbruch.
+    Falls Wikipedia den Linkpfad ändert, muss dieser Testartikel angepasst werden.
+    """
+    path, status = play(driver, "Deutsche Sprache", target="__kein_spielziel__", show=False)
+    assert status == "LOOP", f"{status}: {path}"
+    assert path[-1] in path[:-1]
+    assert len(path[:-1]) == len(set(path[:-1]))
+
+
+@pytest.mark.parametrize("max_steps", [0, -1])
+def test_rejects_invalid_step_limit(max_steps):
+    """Ungültige Grenzen ohne Browserzugriff prüfen; keine lokalen Testseiten nötig."""
+    with pytest.raises(ValueError, match="mindestens 1"):
+        play(None, "Banane", max_steps=max_steps)
+
+
 if __name__ == "__main__":
+    # Kommandozeilenargumente lesen; ohne Startartikel wird Banane verwendet.
     parser = argparse.ArgumentParser()
     parser.add_argument("start", nargs="?", default="Banane")
     parser.add_argument("--target", default=TARGET)
     parser.add_argument("--steps", type=int, default=MAX_STEPS)
     parser.add_argument("--visualize", action=argparse.BooleanOptionalAction, default=True,
-                        help="highlight each followed link (default: on)")
+                        help="Jeden ausgewählten Link markieren (standardmässig aktiv)")
     args = parser.parse_args()
 
     d = create_browser()
@@ -101,7 +173,5 @@ if __name__ == "__main__":
                             show=args.visualize)
         print(f"\nResult: {status} after {len(path)} steps")
     finally:
+        # Den Browser auch dann schliessen, wenn beim Spielen ein Fehler auftritt.
         d.quit()
-
-
-# Deutsche_Sprache => LOOP
