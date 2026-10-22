@@ -9,7 +9,7 @@ Chrome, Firefox und Edge werden der Reihe nach ausprobiert.
 import argparse
 import os
 import time
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import pytest
 from selenium import webdriver
@@ -63,6 +63,8 @@ def play(driver, start_article, max_steps=MAX_STEPS, target=TARGET, show=True):
 
     for step in range(1, max_steps + 1):
         title = current_title(driver)
+        if driver.find_elements(By.CSS_SELECTOR, "#mw-content-text .noarticletext"):
+            raise ValueError(f"Wikipedia-Artikel existiert nicht: {title}")
         path.append(title)
         print(f"{step:>2}. {title}")
 
@@ -157,6 +159,27 @@ def test_rejects_invalid_step_limit(max_steps):
         play(None, "Banane", max_steps=max_steps)
 
 
+def test_no_valid_link(driver):
+    """Die echte Statistik-Spezialseite hat keinen auswählbaren Artikellink.
+
+    Hier fehlt der vom Spiel durchsuchte Artikelbereich. Ändert Wikipedia
+    die Seitenstruktur, muss diese Online-Testseite angepasst werden.
+    """
+    path, status = play(driver, "Spezial:Statistik", show=False)
+    assert status == "DEAD_END"
+    assert path == ["Statistik"]
+    assert unquote(urlparse(driver.current_url).path) == "/wiki/Spezial:Statistik"
+
+
+def test_article_does_not_exist(driver):
+    """Einen fehlenden Artikel auf echtem Wikipedia kontrolliert ablehnen."""
+    article = "SWT404ErrorNotFound_Testartikel_713862706291660342"
+    title = article.replace("_", " ")
+    with pytest.raises(ValueError, match=f"Wikipedia-Artikel existiert nicht: {title}"):
+        play(driver, article, show=False)
+    assert urlparse(driver.current_url).path == "/wiki/" + article
+
+
 if __name__ == "__main__":
     # Kommandozeilenargumente lesen; ohne Startartikel wird Banane verwendet.
     parser = argparse.ArgumentParser()
@@ -172,6 +195,8 @@ if __name__ == "__main__":
         path, status = play(d, args.start, max_steps=args.steps, target=args.target,
                             show=args.visualize)
         print(f"\nResult: {status} after {len(path)} steps")
+    except ValueError as error:
+        parser.exit(1, f"Fehler: {error}\n")
     finally:
         # Den Browser auch dann schliessen, wenn beim Spielen ein Fehler auftritt.
         d.quit()
