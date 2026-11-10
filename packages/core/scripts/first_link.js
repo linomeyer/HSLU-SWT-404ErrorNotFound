@@ -6,10 +6,32 @@ if (!root) return null;
 const blocks = [...root.querySelectorAll('p, ul > li, ol > li')]
   .filter(el => !el.closest('.infobox, .hatnote'));
 
+// Namensräume samt Aliassen (z. B. "datei", "bild", "hilfe", "wp") liefert MediaWiki selbst;
+// die feste Liste dient nur als Rückfallebene, falls mw.config nicht verfügbar ist.
+const NAMESPACE_IDS = (window.mw && mw.config && mw.config.get('wgNamespaceIds')) || {};
+const FALLBACK_NAMESPACES = [
+  'medium', 'media', 'spezial', 'special', 'diskussion', 'talk', 'benutzer', 'benutzerin', 'user',
+  'wikipedia', 'wp', 'project', 'datei', 'bild', 'file', 'image', 'mediawiki', 'vorlage', 'template',
+  'hilfe', 'h', 'help', 'kategorie', 'category', 'portal', 'p', 'modul', 'module',
+];
+
+// Nur Artikel (Namensraum 0) zählen, keine Datei-, Hilfe-, Portal- oder Projektseiten.
+// Titel mit Doppelpunkt wie "Star Wars: Episode I" bleiben erlaubt.
+function isArticle(a) {
+  let name;
+  try { name = decodeURIComponent(a.pathname.slice('/wiki/'.length)); } catch { return false; }
+  const colon = name.indexOf(':');
+  if (colon < 0) return true;
+  const prefix = name.slice(0, colon).trim().toLowerCase().replace(/[ _]+/g, '_');
+  if (prefix in NAMESPACE_IDS) return NAMESPACE_IDS[prefix] === 0;
+  return !FALLBACK_NAMESPACES.includes(prefix) && !/_diskussion$|_talk$/.test(prefix);
+}
+
 // Prüfen, ob der Link nach den Spielregeln verwendet werden darf.
 function isValid(a) {
   if (!a.href || a.hostname !== location.hostname) return false; // Externe Links ausschliessen.
   if (!a.pathname.startsWith('/wiki/')) return false;
+  if (!isArticle(a)) return false;                          // Datei:, Hilfe:, Portal: usw. ausschliessen.
   if (a.pathname === location.pathname) return false;       // Keine Verweise auf dieselbe Seite.
   if (a.classList.contains('new')) return false;            // Rote Links: Artikel fehlt.
   if (a.closest('i, em, sup, .IPA, .reference')) return false; // Kein Kursivtext, keine Fussnoten/Lautschrift.

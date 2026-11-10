@@ -1,0 +1,26 @@
+{
+  "name": "@philo/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "cli": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test/unit",
+    "test:online": "vitest run test/online"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/selenium-webdriver": "^4.35.7",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "selenium-webdriver": "^4.51.0"
+  }
+}

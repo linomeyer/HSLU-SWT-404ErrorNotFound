@@ -1,0 +1,23 @@
+{
+  "name": "philosophy-game-ts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/server",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w @philo/server\" \"npm run dev -w @philo/web\"",
+    "build": "npm run build -w @philo/web",
+    "start": "npm run start -w @philo/server",
+    "cli": "npm run cli -w @philo/core --",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "test:online": "npm run test:online -w @philo/core"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}
